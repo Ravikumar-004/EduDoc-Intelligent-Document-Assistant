@@ -4,6 +4,10 @@ os.environ["GOOGLE_API_KEY"] = "AIzaSyDNZKt4ZgO3fyr8uWlHXEFWco1EpmUY0rU"
 import warnings
 warnings.filterwarnings("ignore")
 
+from langchain_core.prompts import PromptTemplate
+from langchain.chains import RetrievalQA
+from langchain_community.llms import CTransformers
+
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
@@ -22,6 +26,7 @@ import numpy as np
 import sys
 import shutil
 
+online = True
 firstTime = True
 filePaths = []
 agent_names = ["smily", "Omni", "Lucy"]
@@ -32,8 +37,12 @@ selected_voice = voices[0]
 curr_voice = voices[1]
 replay_video = QUrl.fromLocalFile(f"assets/characters/{curr_agent}/standing.gif")
 
+
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 llm = ChatGoogleGenerativeAI(model="gemini-pro")
+
+off_llm = CTransformers(model="models/llama-2-7b-chat.ggmlv3.q6_K.bin", model_type="llama", 
+                        config={'max_new_tokens': 512, 'temperature': 0.01})
 
 recognizer = sr.Recognizer()
 
@@ -202,6 +211,23 @@ class EduDocApp(QMainWindow):
         right_layout = QVBoxLayout()
         right_pane.setLayout(right_layout)
         right_pane.setStyleSheet("background-color: #DEE7FA; border-radius: 30px;")
+            
+        right_layout.addSpacing(30)
+    
+        self.mode_layout = QVBoxLayout()
+        self.mode_label = QLabel("Select Mode")
+        self.mode_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        
+        self.online_radio = QRadioButton("Online")
+        self.online_radio.setStyleSheet("font-size: 14px;")
+        self.offline_radio = QRadioButton("Offline")
+        self.offline_radio.setStyleSheet("font-size: 14px;")
+        self.online_radio.setChecked(True)
+        
+        self.mode_layout.addWidget(self.mode_label)
+        self.mode_layout.addWidget(self.online_radio)
+        self.mode_layout.addWidget(self.offline_radio)
+        right_layout.addLayout(self.mode_layout)
         
         selectVoice_label = QLabel("Select Voice")
         selectVoice_label.setStyleSheet("font-weight: bold; font-size: 14px; margin-top: 15px;")
@@ -311,7 +337,7 @@ class EduDocApp(QMainWindow):
         self.chatbot_output = QTextEdit(self)
         self.chatbot_output.setStyleSheet('background: #DEE7FA; color: black; border: none; border-radius: 15px; padding: 10px;')
         self.chatbot_output.setMinimumWidth(800)
-        self.chatbot_output.setMinimumHeight(600)
+        self.chatbot_output.setMaximumHeight(700)
         self.chatbot_output.setReadOnly(True)
 
         input_layout = QHBoxLayout()
@@ -476,9 +502,16 @@ class EduDocApp(QMainWindow):
         selected_agent = name
     
     def apply_agents(self):
-        global curr_agent, selected_agent, selected_voice, curr_voice, replay_video
+        global curr_agent, selected_agent, selected_voice, curr_voice, replay_video, online
         curr_agent = selected_agent
         curr_voice = selected_voice
+        
+        if self.online_radio.isChecked():
+            online = True
+        elif self.offline_radio.isChecked():
+            online = False
+        
+        print(online)
         
         if(curr_agent == "smily"):
             self.face_image.setPixmap(QPixmap(f"assets/characters/{curr_agent}/char.png"))
@@ -490,7 +523,7 @@ class EduDocApp(QMainWindow):
             self.face_image.hide()
             self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(f"assets/characters/{curr_agent}/standing.gif")))
             replay_video = QUrl.fromLocalFile(f"assets/characters/{curr_agent}/standing.gif")
-            self.videoWidget.setFixedSize(312.5, 500)
+            self.videoWidget.setFixedSize(312, 500)
             self.videoWidget.show()
             self.mediaPlayer.play()
             
@@ -506,25 +539,62 @@ class EduDocApp(QMainWindow):
             self.add_chat_message(user_question, True)
             self.chatbot_input.clear()
             QApplication.processEvents()
-            answer = self.askAI(user_question)
-            self.add_chat_message(answer[1], False)
-    
-    def askAI(self, question):
-        global db, llm, filePaths
+            if online:
+                _, answer = self.askAI(user_question)
+            else:
+                _, answer = self.offAI(user_question)
+            self.add_chat_message(answer, False)
+            
+    def offAI(self, question):
+        global off_llm, db, filePaths
         
         if filePaths == []:
             return "0", "Hey! You did not upload your documents. Could you please upload documents?"
         
+        print("Query Execution Started in offline mode")
+        start = time.time()
+        # docs = db.similarity_search(question)
+        # context = "\n".join([x.page_content for x in docs])
+        
+        qa_template = """Use the following pieces of information to answer the user's question.
+        If you don't know the answer, just say that you don't know, don't try to make up an answer.
+        Keep the answer clear, concise, and informative and neither too short nor too long.
+
+        Context: {context}
+        Question: {question}
+
+        Only return the helpful answer below and nothing else.
+        Helpful answer:
+        """
+        
+        prompt = PromptTemplate(template=qa_template,
+                            input_variables=['context', 'question'])
+        
+        dbqa = RetrievalQA.from_chain_type(llm=off_llm,
+                                    chain_type='stuff',
+                                    retriever=db.as_retriever(search_kwargs={'k': 2}),
+                                    return_source_documents=True,
+                                    chain_type_kwargs={'prompt': prompt}
+                                    )
+        
+        response = dbqa.invoke({'query': question}) 
+        end = time.time()
+        print("Time taken: ", end-start)
+        print(response)
+        return "question", response["result"]
+    
+    def askAI(self, question):
+        global db, llm, filePaths
+        
         print("Query Execution Started")
         start = time.time()
-        docs = db.similarity_search(question)
-        content = "\n".join([x.page_content for x in docs])
         
         qa_prompt = '''Your name is Doc AI, and you are an AI assistant that helps users find information based on a given context.  
             You are provided with context or information, and users will ask questions based on that information.  
 
             You have three tasks:  
             1. Identify if the prompt is a question or a greeting. Return "question" or "greeting" or "garbage" on the first line.  
+            
             2. Provide an answer:  
             - If the prompt is a greeting, return an appropriate greeting.  
             - If the prompt is a question, find the answer from the provided context and return:  
@@ -532,23 +602,42 @@ class EduDocApp(QMainWindow):
             - If the answer is not found in the context, return:  
                 **"Answer not found in the information provided."**  
             
-            Ensure responses are clear, concise, and informative—neither too short nor too long.
+            3. In next line. Now dont consider the provided information and answer the question based on real-world facts.
+            - If the answer cannot be found from real-world facts, return the answer as is.
+            - Else
+                - If the answer is factually correct, return it as is.
+                - If the answer is incorrect, append it and return:  
+                    **"According to real-world facts, (correct answer)"**
+            Ensure responses are clear, concise, and informative. neither too short nor too long.
         '''
         
-        '''
-        3. Verify the answer using real-world facts. only if the answer can be found without using content.
-            - If the answer cannot be answer from real-world facts i.e., without using content, return the answer as is.
-            - If the context-based answer is factually correct, return it as is.  
-            - If the context-based answer is incorrect, append it and return:  
-                **"According to real-world facts, (correct answer)"**  
-            - If the answer was not found in the context, directly return the real-world fact as:  
-                **"According to real-world facts, (answer)"**  
+        qa_prompt2 = '''Your name is Doc AI, and you are an AI assistant that helps users find information.    
+
+            You have two tasks:  
+            1. Identify if the prompt is a question or a greeting. Return "question" or "greeting" or "garbage" on the first line.  
+            
+            2. Provide an answer:  
+            - If the prompt is a greeting, return an appropriate greeting.  
+            - If the prompt is a question, find the answer from real-world facts and return:
+                **"According to real-world facts, (answer)"**
+            - If the answer cannot be found then return 
+                **"Answer not found in real-world facts. Did you forgot to upload your documents?"**
+            
+            Ensure responses are clear, concise, and informative. neither too short nor too long.
         '''
         
-        input_text = qa_prompt + "\nInformation: \n" + content + "\nPrompt:\n" + question
-        result = llm.invoke(input_text)
+        if filePaths == []:
+            input_text = qa_prompt2 + "\nPrompt:\n" + question
+            result = llm.invoke(input_text)
+        else:
+            docs = db.similarity_search(question)
+            content = "\n".join([x.page_content for x in docs])
+            input_text = qa_prompt + "\nInformation: \n" + content + "\nPrompt:\n" + question
+            result = llm.invoke(input_text)
+            
         answer = result.content
         print("Answer: ", answer)
+        
         first_line, *remaining_lines = answer.split('\n', 1)
         print("First Line: ", first_line)
         if remaining_lines:
@@ -640,7 +729,8 @@ class EduDocApp(QMainWindow):
         video.write_videofile(output_path, fps=fps)
 
     def Reply(self, result, c):
-        global curr_agent, curr_voice, replay_video
+        global curr_agent, curr_voice, replay_video, online
+        print(online)
         
         if curr_agent!= "smily":
             self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(f"assets/characters/{curr_agent}/thinking.gif")))
@@ -648,7 +738,11 @@ class EduDocApp(QMainWindow):
         self.listening_label.setText("Thinking...") 
         
         if c == 1:
-            typ, answer = self.askAI(result)
+            if online:
+                typ, answer = self.askAI(result)
+            else:
+                typ, answer = self.offAI(result)
+                
             if(answer == ' ' or typ=="garbage"):
                 answer = "Sorry! I can't understand this question"
             engine = pyttsx3.init()
