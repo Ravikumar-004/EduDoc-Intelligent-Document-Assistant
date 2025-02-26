@@ -1,5 +1,5 @@
 import os
-os.environ["GOOGLE_API_KEY"] = "AIzaSyDNZKt4ZgO3fyr8uWlHXEFWco1EpmUY0rU"
+os.environ["GOOGLE_API_KEY"] = "<-API-KEY->"
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -304,7 +304,7 @@ class EduDocApp(QMainWindow):
         self.chatbot_output = QTextEdit(self)
         self.chatbot_output.setStyleSheet('background: #DEE7FA; color: black; border: none; border-radius: 15px; padding: 10px;')
         self.chatbot_output.setMinimumWidth(600)
-        self.chatbot_output.setFixedHeight(800)
+        self.chatbot_output.setFixedHeight(620)
         self.chatbot_output.setReadOnly(True)
 
         input_layout = QHBoxLayout()
@@ -595,9 +595,9 @@ class EduDocApp(QMainWindow):
 
     def add_chat_message(self, text, is_user):
         if is_user:
-            self.chatbot_output.append(f"<div style='text-align: left; font-family: Arial; font-size: 20px; color: #2476FF; padding: 10px; margin-left: 100px; margin-bottom: 20px; border-radius: 10px;'>You: {text}</div>")
+            self.chatbot_output.append(f"<div style='text-align: left; font-family: Arial; font-size: 20px; color: #2476FF; padding: 10px; margin-left: 100px; margin-right: 100px; margin-bottom: 20px; border-radius: 10px;'>You: {text}</div>")
         else:
-            self.chatbot_output.append(f"<div style='text-align: left; font-family: Arial; font-size: 20px; color: black; padding: 10px; margin-left: 100px; margin-bottom: 30px; border-radius: 10px;'>Bot: {text}</div>")
+            self.chatbot_output.append(f"<div style='text-align: left; font-family: Arial; font-size: 20px; color: black; padding: 10px; margin-left: 100px; margin-right: 100px; margin-bottom: 30px; border-radius: 10px;'>Bot: {text}</div>")
         self.chatbot_output.moveCursor(QTextCursor.End)
     
     def on_media_status_changed(self, status):
