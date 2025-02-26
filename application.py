@@ -1,5 +1,5 @@
 import os
-os.environ["GOOGLE_API_KEY"] = "AIzaSyDNZKt4ZgO3fyr8uWlHXEFWco1EpmUY0rU"
+os.environ["GOOGLE_API_KEY"] = "<-API-KEY->"
 
 import warnings
 warnings.filterwarnings("ignore")
